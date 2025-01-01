@@ -9,7 +9,7 @@ use prometheus_exporter::prometheus::{
     CounterVec,
     register_counter_vec, register_gauge, register_gauge_vec
 };
-use std::{collections::HashMap, fs, net::SocketAddr, path::Path};
+use std::{collections::HashMap, fs::{self, File}, io::{BufRead, BufReader}, net::SocketAddr, path::{Path, PathBuf}};
 
 fn get_addr() -> SocketAddr {
     let host = std::env::var("OWNTRACKS_EXPORTER_BIND_HOST")
@@ -46,7 +46,7 @@ impl StorageAccountant {
         }
     }
 
-    fn get_all_subdirs(dir: &Path) -> Vec<String> {
+    fn get_all_dir_entries(dir: &Path, filter: impl Fn(&PathBuf) -> bool) -> Vec<String> {
         let mut subdirs : Vec<String> = Vec::new();
         match fs::read_dir(dir) {
             Ok(entries) => {
@@ -54,10 +54,10 @@ impl StorageAccountant {
                     match entry {
                         Ok(entry) => {
                             let path = entry.path();
-                            if path.is_dir() {
+                            if filter(&path) {
                                 match path.file_name() {
                                     Some(basename) => {
-                                        trace!("found dir: {}/{}", dir.as_os_str().to_str().unwrap_or("?"), basename.to_str().unwrap_or("?"));
+                                        trace!("found entry: {}/{}", dir.as_os_str().to_str().unwrap_or("?"), basename.to_str().unwrap_or("?"));
                                         match basename.to_str() {
                                             Some(basename) => subdirs.push(basename.to_owned()),
                                             None => ()
@@ -74,6 +74,14 @@ impl StorageAccountant {
             Err(e) => error!("Error read dir: {}", e),
         }
         subdirs
+    }
+
+    fn get_all_subdirs(dir: &Path) -> Vec<String> {
+        Self::get_all_dir_entries(dir, |path| path.is_dir())
+    }
+
+    fn get_all_files(dir: &Path) -> Vec<String> {
+        Self::get_all_dir_entries(dir, |path| path.is_file())
     }
 
     fn get_user_names(&self) -> Vec<String> {
@@ -106,13 +114,37 @@ impl StorageAccountant {
         ])
     }
 
-    fn update(&mut self) -> Result<(), Box<dyn std::error::Error>>{
+    fn get_file_locations_count(&self, dir: &PathBuf, file: &str) -> Result<usize, std::io::Error> {
+        let rec_file_path = Path::new(dir).join(file);
+        let file = File::open(rec_file_path)?;
+        let r = BufReader::new(file);
+        let lines = r.lines();
+        let count = lines.filter(
+            |line| line.as_ref().map_or(false,
+                |line| line.split_whitespace().nth(1).map_or(false,
+                    |_2nd_field| _2nd_field == "*"))).count();
+        Ok(count)
+    }
+
+    fn get_all_locations_count(&self, device: &StorageDevice) -> usize {
+        let dir = Path::new(&self.root)
+            .join("rec")
+            .join(&device.user_name)
+            .join(&device.device_name);
+        let total = Self::get_all_files(&dir).iter()
+            .map(|file| self.get_file_locations_count(&dir, &file))
+            .fold(0, |sum, c| sum + c.unwrap_or(0));
+        total
+    }
+
+    fn update(&mut self) {
         for device in self.get_devices() {
+            let total = self.get_all_locations_count(&device);
             let labels = Self::to_labels_map(&device);
             let m = self.m_points_total.with(&labels);
-            m.inc();
+            m.reset();
+            m.inc_by(total as f64);
         }
-        Ok(())
     }
 }
 
@@ -146,7 +178,7 @@ fn main() {
     metrics.with_label_values(&vec!["A", "B"]).set(42.0);
 
     let mut rec_metrics = StorageAccountant::new(&get_storage_dir());
-    let _ = rec_metrics.update();
+    rec_metrics.update();
 
     // Start exporter
     let exporter = prometheus_exporter::start(addr).expect("can not start exporter");
@@ -160,7 +192,7 @@ fn main() {
         metric.inc();
         metrics.with_label_values(&vec!["A", "B"]).inc();
         metrics.with_label_values(&vec!["C", "D"]).inc();
-        let _ = rec_metrics.update();
+        rec_metrics.update();
         debug!("updating metrics...");
         drop(guard);
     }
