@@ -5,7 +5,9 @@ use env_logger::{
     Env,
 };
 use log::{debug, info, trace};
-use prometheus_exporter::prometheus::register_gauge;
+use prometheus_exporter::prometheus::{
+    register_gauge, register_gauge_vec
+};
 use std::net::SocketAddr;
 
 fn get_addr() -> SocketAddr {
@@ -42,18 +44,24 @@ fn main() {
     // Create metric
     let metric = register_gauge!("simple_the_answer", "to everything")
         .expect("can not create gauge simple_the_answer");
+    metric.set(42.0);
+
+    let metrics = register_gauge_vec!("simple_the_answers", "to many things", &["a", "b"])
+        .expect("can not create gauge simple_the_answers");
+    metrics.with_label_values(&vec!["A", "B"]).set(42.0);
 
     // Start exporter
     let exporter = prometheus_exporter::start(addr).expect("can not start exporter");
 
     barrier.wait();
-    metric.set(42.0);
 
     loop {
         debug!("waiting for next request...");
         let guard = exporter.wait_request();
         debug!("updating metrics...");
         metric.inc();
+        metrics.with_label_values(&vec!["A", "B"]).inc();
+        metrics.with_label_values(&vec!["C", "D"]).inc();
         debug!("updating metrics...");
         drop(guard);
     }
