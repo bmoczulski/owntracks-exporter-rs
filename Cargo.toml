@@ -8,3 +8,6 @@ env_logger = "0.11.6"
 log = "0.4.22"
 prometheus_exporter = { version = "0.8.5", default-features = false, features = ["logging"] }
 reqwest = { version = "0.12.9", features = ["blocking"] }
+
+[features]
+sample_metrics = []

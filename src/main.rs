@@ -7,7 +7,11 @@ use env_logger::{
 use log::{error, debug, info, trace};
 use prometheus_exporter::prometheus::{
     CounterVec,
-    register_counter_vec, register_gauge, register_gauge_vec
+    register_counter_vec,
+};
+#[cfg(feature = "sample_metrics")]
+use prometheus_exporter::prometheus::{
+    register_gauge, register_gauge_vec
 };
 use std::{collections::HashMap, fs::{self, File}, io::{BufRead, BufReader}, net::SocketAddr, ops::AddAssign, path::{Path, PathBuf}};
 
@@ -197,14 +201,19 @@ fn main() {
       });
     }
 
-    // Create metric
+    #[cfg(feature = "sample_metrics")]
     let metric = register_gauge!("simple_the_answer", "to everything")
         .expect("can not create gauge simple_the_answer");
-    metric.set(42.0);
 
+    #[cfg(feature = "sample_metrics")]
     let metrics = register_gauge_vec!("simple_the_answers", "to many things", &["a", "b"])
         .expect("can not create gauge simple_the_answers");
-    metrics.with_label_values(&vec!["A", "B"]).set(42.0);
+
+    #[cfg(feature = "sample_metrics")]
+    {
+        metric.set(42.0);
+        metrics.with_label_values(&vec!["A", "B"]).set(42.0);
+    }
 
     let mut rec_metrics = StorageAccountant::new(&get_storage_dir());
     rec_metrics.update();
@@ -218,9 +227,12 @@ fn main() {
         debug!("waiting for next request...");
         let guard = exporter.wait_request();
         debug!("updating metrics...");
-        metric.inc();
-        metrics.with_label_values(&vec!["A", "B"]).inc();
-        metrics.with_label_values(&vec!["C", "D"]).inc();
+        #[cfg(feature = "sample_metrics")]
+        {
+            metric.inc();
+            metrics.with_label_values(&vec!["A", "B"]).inc();
+            metrics.with_label_values(&vec!["C", "D"]).inc();
+        }
         rec_metrics.update();
         debug!("updating metrics...");
         drop(guard);
