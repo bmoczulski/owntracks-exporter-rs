@@ -19,7 +19,7 @@ fn get_addr() -> SocketAddr {
     let addr_str = format!("{host}:{port}");
     addr_str
         .parse()
-        .expect(format!("This doesn't seem to be a valid bind address: {addr_str}").as_str())
+        .unwrap_or_else(|_| panic!("This doesn't seem to be a valid bind address: {addr_str}"))
 }
 
 fn get_storage_dir() -> String {
@@ -70,15 +70,11 @@ impl StorageAccountant {
                         Ok(entry) => {
                             let path = entry.path();
                             if filter(&path) {
-                                match path.file_name() {
-                                    Some(basename) => {
-                                        trace!("found entry: {}/{}", dir.as_os_str().to_str().unwrap_or("?"), basename.to_str().unwrap_or("?"));
-                                        match basename.to_str() {
-                                            Some(basename) => subdirs.push(basename.to_owned()),
-                                            None => ()
-                                        }
+                                if let Some(basename) = path.file_name() {
+                                    if let Some(basename) = basename.to_str() {
+                                        trace!("found entry: {}/{}", dir.as_os_str().to_str().unwrap_or("?"), basename);
+                                        subdirs.push(basename.to_owned())
                                     }
-                                    None => ()
                                 }
                             }
                         }
@@ -115,7 +111,7 @@ impl StorageAccountant {
             for device_name in self.get_device_names(&user_name) {
                 devices.push(StorageDevice{
                     user_name: user_name.clone(),
-                    device_name: device_name
+                    device_name
                 });
             }
         }
@@ -157,7 +153,7 @@ impl StorageAccountant {
             .join(&device.user_name)
             .join(&device.device_name);
         let total = Self::get_all_files(&dir).iter()
-            .map(|file| self.get_rec_file_stats(&dir, &file))
+            .map(|file| self.get_rec_file_stats(&dir, file))
             .fold(StorageDeviceStats::default(), |mut acc, stat| {
                 if let Ok(stat) = stat {
                     acc += stat;
