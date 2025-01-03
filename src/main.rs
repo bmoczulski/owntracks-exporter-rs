@@ -212,7 +212,7 @@ fn main() {
     #[cfg(feature = "sample_metrics")]
     {
         metric.set(42.0);
-        metrics.with_label_values(&vec!["A", "B"]).set(42.0);
+        metrics.with_label_values(&["A", "B"]).set(42.0);
     }
 
     let mut rec_metrics = StorageAccountant::new(&get_storage_dir());
@@ -230,8 +230,8 @@ fn main() {
         #[cfg(feature = "sample_metrics")]
         {
             metric.inc();
-            metrics.with_label_values(&vec!["A", "B"]).inc();
-            metrics.with_label_values(&vec!["C", "D"]).inc();
+            metrics.with_label_values(&["A", "B"]).inc();
+            metrics.with_label_values(&["C", "D"]).inc();
         }
         rec_metrics.update();
         debug!("updating metrics...");
