@@ -9,7 +9,7 @@ use prometheus_exporter::prometheus::{
     CounterVec,
     register_counter_vec, register_gauge, register_gauge_vec
 };
-use std::{collections::HashMap, fs::{self, File}, io::{BufRead, BufReader}, net::SocketAddr, path::{Path, PathBuf}};
+use std::{collections::HashMap, fs::{self, File}, io::{BufRead, BufReader}, net::SocketAddr, ops::AddAssign, path::{Path, PathBuf}};
 
 fn get_addr() -> SocketAddr {
     let host = std::env::var("OWNTRACKS_EXPORTER_BIND_HOST")
@@ -30,6 +30,7 @@ fn get_storage_dir() -> String {
 struct StorageAccountant {
     root: String,
     m_points_total: CounterVec,
+    m_lwts_total: CounterVec,
 }
 
 #[derive(Eq, Hash, PartialEq)]
@@ -38,11 +39,25 @@ struct StorageDevice {
     device_name: String
 }
 
+#[derive(Default)]
+struct StorageDeviceStats {
+    points_count_total: usize,
+    ltws_count_total: usize,
+}
+
+impl AddAssign for StorageDeviceStats {
+    fn add_assign(&mut self, rhs: Self) {
+        self.points_count_total += rhs.points_count_total;
+        self.ltws_count_total += rhs.ltws_count_total;
+    }
+}
+
 impl StorageAccountant {
     fn new(root: &str) -> Self {
         Self {
             root: root.to_owned(),
             m_points_total: register_counter_vec!("owntracks_recorder_points_total", "Total number of points recorded so far", &["user", "device"]).unwrap(),
+            m_lwts_total: register_counter_vec!("owntracks_recorder_lwts_total", "Total number of LWTs recorded so far", &["user", "device"]).unwrap(),
         }
     }
 
@@ -114,26 +129,41 @@ impl StorageAccountant {
         ])
     }
 
-    fn get_file_locations_count(&self, dir: &PathBuf, file: &str) -> Result<usize, std::io::Error> {
+    fn get_rec_file_stats(&self, dir: &PathBuf, file: &str) -> Result<StorageDeviceStats, std::io::Error> {
         let rec_file_path = Path::new(dir).join(file);
         let file = File::open(rec_file_path)?;
         let r = BufReader::new(file);
         let lines = r.lines();
-        let count = lines.filter(
-            |line| line.as_ref().map_or(false,
-                |line| line.split_whitespace().nth(1).map_or(false,
-                    |_2nd_field| _2nd_field == "*"))).count();
-        Ok(count)
+        let stats = lines.map(
+            |line| line.as_ref().map_or(String::new(),
+                |line| line.split_whitespace().nth(1).map_or(String::new(),
+                    |_2nd_field| _2nd_field.to_string()
+                )
+            )
+        ).fold(StorageDeviceStats::default(), |mut stats, _2nd_field| {
+            match _2nd_field.as_str() {
+                "*" => stats.points_count_total += 1,
+                "lwt" => stats.ltws_count_total += 1,
+                _ => ()
+            }
+            stats
+        });
+        Ok(stats)
     }
 
-    fn get_all_locations_count(&self, device: &StorageDevice) -> usize {
+    fn get_all_locations_count(&self, device: &StorageDevice) -> StorageDeviceStats {
         let dir = Path::new(&self.root)
             .join("rec")
             .join(&device.user_name)
             .join(&device.device_name);
         let total = Self::get_all_files(&dir).iter()
-            .map(|file| self.get_file_locations_count(&dir, &file))
-            .fold(0, |sum, c| sum + c.unwrap_or(0));
+            .map(|file| self.get_rec_file_stats(&dir, &file))
+            .fold(StorageDeviceStats::default(), |mut acc, stat| {
+                if let Ok(stat) = stat {
+                    acc += stat;
+                }
+                acc
+            });
         total
     }
 
@@ -141,9 +171,12 @@ impl StorageAccountant {
         for device in self.get_devices() {
             let total = self.get_all_locations_count(&device);
             let labels = Self::to_labels_map(&device);
-            let m = self.m_points_total.with(&labels);
-            m.reset();
-            m.inc_by(total as f64);
+            let m_points_total = self.m_points_total.with(&labels);
+            m_points_total.reset();
+            m_points_total.inc_by(total.points_count_total as f64);
+            let m_lwts_total = self.m_lwts_total.with(&labels);
+            m_lwts_total.reset();
+            m_lwts_total.inc_by(total.ltws_count_total as f64);
         }
     }
 }
