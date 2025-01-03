@@ -1,0 +1,11 @@
+#!/bin/sh
+
+# Run `cargo fmt --check` to ensure code is properly formatted
+echo "Running cargo fmt --check..."
+
+if ! cargo fmt --check; then
+    echo "Code is not properly formatted. Run 'cargo fmt' to fix formatting."
+    exit 1
+fi
+
+echo "Formatting check passed."
