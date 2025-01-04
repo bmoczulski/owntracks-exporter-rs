@@ -5,6 +5,10 @@ use log::{debug, error, info, trace};
 use prometheus_exporter::prometheus::{register_counter_vec, CounterVec};
 #[cfg(feature = "sample_metrics")]
 use prometheus_exporter::prometheus::{register_gauge, register_gauge_vec};
+use signal_hook::{
+    consts::{SIGINT, SIGTERM},
+    iterator::Signals,
+};
 use std::{
     collections::HashMap,
     fs::{self, File},
@@ -198,10 +202,34 @@ impl StorageAccountant {
     }
 }
 
+fn setup_signal_handling() {
+    let mut signals = Signals::new(&[SIGINT, SIGTERM]).expect("Unable to register signals");
+
+    // Spawn a thread to handle incoming signals
+    std::thread::spawn(move || {
+        for signal in signals.forever() {
+            match signal {
+                SIGINT => {
+                    println!("Caught SIGINT (Ctrl+C), shutting down...");
+                    // Clean up or do necessary work before exiting
+                    std::process::exit(0); // Exit the process cleanly
+                }
+                SIGTERM => {
+                    println!("Caught SIGTERM, shutting down...");
+                    std::process::exit(0);
+                }
+                _ => {}
+            }
+        }
+    });
+}
+
 fn main() {
     // Setup logger with default level info so we can see the messages from
     // prometheus_exporter.
     Builder::from_env(Env::default().default_filter_or("info")).init();
+
+    setup_signal_handling();
 
     // Parse address used to bind exporter to.
     let addr = get_addr();
