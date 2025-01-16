@@ -96,11 +96,11 @@ impl StorageAccountant {
                                 }
                             }
                         }
-                        Err(e) => error!("Error dir entry: {}", e),
+                        Err(e) => error!("Error dir entry {}: {}", dir.display(), e),
                     }
                 }
             }
-            Err(e) => error!("Error read dir: {}", e),
+            Err(e) => error!("Error read dir {}: {}", dir.display(), e),
         }
         subdirs
     }
