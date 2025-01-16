@@ -59,6 +59,7 @@ Add new scrape config in `/etc/prometheus/prometheus.yml`:
 ```yaml
 scrape_configs:
   - job_name: "owntracks-recorder"
+    fallback_scrape_protocol: PrometheusText0.0.4  # <-- necessary with Prometheus 3.x
     static_configs:
     - targets: ["localhost:9192"]
 ```
