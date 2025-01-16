@@ -2,9 +2,9 @@
 
 use env_logger::{Builder, Env};
 use log::{debug, error, info, trace};
-use prometheus_exporter::prometheus::{register_counter_vec, CounterVec};
 #[cfg(feature = "sample_metrics")]
 use prometheus_exporter::prometheus::{register_gauge, register_gauge_vec};
+use prometheus_exporter::prometheus::{register_int_counter_vec, IntCounterVec};
 use signal_hook::{
     consts::{SIGINT, SIGTERM},
     iterator::Signals,
@@ -33,8 +33,8 @@ fn get_storage_dir() -> String {
 
 struct StorageAccountant {
     root: String,
-    m_points_total: CounterVec,
-    m_lwts_total: CounterVec,
+    m_points_total: IntCounterVec,
+    m_lwts_total: IntCounterVec,
 }
 
 #[derive(Eq, Hash, PartialEq)]
@@ -60,13 +60,13 @@ impl StorageAccountant {
     fn new(root: &str) -> Self {
         Self {
             root: root.to_owned(),
-            m_points_total: register_counter_vec!(
+            m_points_total: register_int_counter_vec!(
                 "owntracks_recorder_points_total",
                 "Total number of points recorded so far",
                 &["user", "device"]
             )
             .unwrap(),
-            m_lwts_total: register_counter_vec!(
+            m_lwts_total: register_int_counter_vec!(
                 "owntracks_recorder_lwts_total",
                 "Total number of LWTs recorded so far",
                 &["user", "device"]
@@ -194,10 +194,10 @@ impl StorageAccountant {
             let labels = Self::to_labels_map(&device);
             let m_points_total = self.m_points_total.with(&labels);
             m_points_total.reset();
-            m_points_total.inc_by(total.points_count_total as f64);
+            m_points_total.inc_by(total.points_count_total as u64);
             let m_lwts_total = self.m_lwts_total.with(&labels);
             m_lwts_total.reset();
-            m_lwts_total.inc_by(total.ltws_count_total as f64);
+            m_lwts_total.inc_by(total.ltws_count_total as u64);
         }
     }
 }
